@@ -1,0 +1,52 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+
+#define MAX_LEN 100  // max length of each string
+
+// Thread function
+void* worker(void* arg) {
+    char* message = (char*)arg;  // cast void* to char*
+    printf("Thread received message: %s\n", message);
+
+    int* len = malloc(sizeof(int));
+    *len = strlen(message);
+    return len;  // return string length
+}
+
+int main() {
+    int n;
+
+    printf("Enter number of strings: ");
+    scanf("%d", &n);
+    getchar(); // consume newline after number input
+
+    pthread_t threads[n];
+    char* messages[n];
+
+    // Read strings from user
+    for (int i = 0; i < n; i++) {
+        messages[i] = malloc(MAX_LEN * sizeof(char));
+        printf("Enter string %d: ", i + 1);
+        fgets(messages[i], MAX_LEN, stdin);
+        messages[i][strcspn(messages[i], "\n")] = '\0'; // remove newline
+    }
+
+    // Create threads
+    for (int i = 0; i < n; i++) {
+        pthread_create(&threads[i], NULL, worker, messages[i]);
+    }
+
+    // Join threads and collect results
+    for (int i = 0; i < n; i++) {
+        void* ret_val;
+        pthread_join(threads[i], &ret_val);
+        int* len = (int*)ret_val;
+        printf("Length of string %d: %d\n", i + 1, *len);
+        free(len);
+        free(messages[i]); // free each string
+    }
+
+    return 0;
+}

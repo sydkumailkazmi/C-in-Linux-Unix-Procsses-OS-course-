@@ -1,0 +1,31 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+
+void* worker(void* arg) {
+    char* message = (char*)arg;   // cast void* to char*
+    printf("Thread received message: %s\n", message);
+
+    // Optional: return length of string
+    int* len = malloc(sizeof(int));
+    *len = strlen(message);
+    return len;
+}
+
+int main() {
+    pthread_t t;
+    char str[] = "Hello, Thread!";
+
+    // Create thread and pass string
+    pthread_create(&t, NULL, worker, str);
+
+    void* ret_val;
+    pthread_join(t, &ret_val);
+
+    int* length = (int*)ret_val;
+    printf("Length of string returned by thread: %d\n", *length);
+
+    free(length); // free dynamically allocated memory
+    return 0;
+}

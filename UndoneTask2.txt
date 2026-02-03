@@ -1,0 +1,169 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+#include <stdbool.h>
+
+// Global variables
+char* file_content = NULL;
+long file_size = 0;
+char* search_string = NULL;
+int num_threads;
+bool found = false;
+pthread_mutex_t mutex;
+
+// Structure to pass data to threads
+typedef struct {
+    int thread_id;
+    long start_pos;
+    long end_pos;
+} ThreadData;
+
+// Function to count line and column number from position
+void get_line_column(long pos, int* line, int* column) {
+    *line = 1;
+    *column = 1;
+    
+    for (long i = 0; i < pos; i++) {
+        if (file_content[i] == '\n') {
+            (*line)++;
+            *column = 1;
+        } else {
+            (*column)++;
+        }
+    }
+}
+
+// Thread function to search for string
+void* search_string_thread(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    int search_len = strlen(search_string);
+    
+    // Search in assigned portion
+    for (long i = data->start_pos; i <= data->end_pos - search_len; i++) {
+        // Check if another thread already found it
+        pthread_mutex_lock(&mutex);
+        if (found) {
+            pthread_mutex_unlock(&mutex);
+            return NULL;
+        }
+        pthread_mutex_unlock(&mutex);
+        
+        // Check if string matches at current position
+        if (strncmp(&file_content[i], search_string, search_len) == 0) {
+            pthread_mutex_lock(&mutex);
+            if (!found) {  // Double-check to avoid duplicate printing
+                found = true;
+                
+                int line, column;
+                get_line_column(i, &line, &column);
+                
+                printf("String '%s' found by Thread %d\n", search_string, data->thread_id);
+                printf("Location: Line %d, Column %d\n", line, column);
+            }
+            pthread_mutex_unlock(&mutex);
+            return NULL;
+        }
+    }
+    
+    return NULL;
+}
+
+int main(int argc, char* argv[]) {
+    // Check arguments
+    if (argc != 4) {
+        printf("Usage: %s <filename> <N threads> <search string>\n", argv[0]);
+        return 1;
+    }
+    
+    char* filename = argv[1];
+    num_threads = atoi(argv[2]);
+    search_string = argv[3];
+    
+    // Validate input
+    if (num_threads <= 0) {
+        printf("Error: Number of threads must be positive.\n");
+        return 1;
+    }
+    
+    if (strlen(search_string) == 0) {
+        printf("Error: Search string cannot be empty.\n");
+        return 1;
+    }
+    
+    // Open and read file
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        printf("Error: Cannot open file '%s'.\n", filename);
+        return 1;
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (file_size == 0) {
+        printf("Error: File is empty.\n");
+        fclose(file);
+        return 1;
+    }
+    
+    // Allocate memory and read file
+    file_content = malloc(file_size + 1);
+    if (file_content == NULL) {
+        printf("Error: Memory allocation failed.\n");
+        fclose(file);
+        return 1;
+    }
+    
+    fread(file_content, 1, file_size, file);
+    file_content[file_size] = '\0';
+    fclose(file);
+    
+    // Initialize mutex
+    pthread_mutex_init(&mutex, NULL);
+    
+    // Create thread arrays
+    pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
+    ThreadData* thread_data = malloc(num_threads * sizeof(ThreadData));
+    
+    // Calculate work division
+    long chunk_size = file_size / num_threads;
+    
+    // Create threads
+    for (int i = 0; i < num_threads; i++) {
+        thread_data[i].thread_id = i;
+        thread_data[i].start_pos = i * chunk_size;
+        
+        if (i == num_threads - 1) {
+            thread_data[i].end_pos = file_size;
+        } else {
+            // Extend end position to avoid missing strings at boundaries
+            thread_data[i].end_pos = (i + 1) * chunk_size + strlen(search_string) - 1;
+            if (thread_data[i].end_pos > file_size) {
+                thread_data[i].end_pos = file_size;
+            }
+        }
+        
+        pthread_create(&threads[i], NULL, search_string_thread, &thread_data[i]);
+    }
+    
+    // Wait for all threads to complete
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    // Print result if not found
+    if (!found) {
+        printf("String '%s' not found in file '%s'.\n", search_string, filename);
+    }
+    
+    // Cleanup
+    pthread_mutex_destroy(&mutex);
+    free(file_content);
+    free(threads);
+    free(thread_data);
+    
+    return 0;
+}

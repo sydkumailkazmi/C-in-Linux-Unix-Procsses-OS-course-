@@ -1,0 +1,94 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+// Global variables
+double pi_sum = 0.0;
+pthread_mutex_t mutex;
+int n_terms;
+int num_threads;
+
+// Thread function to calculate partial sum
+void* calculate_pi(void* arg) {
+    int thread_id = *(int*)arg;
+    int terms_per_thread = n_terms / num_threads;
+    int start = thread_id * terms_per_thread;
+    int end = start + terms_per_thread;
+    
+    double local_sum = 0.0;
+    
+    // Calculate local sum for this thread's range
+    for (int n = start; n < end; n++) {
+        double term = (n % 2 == 0 ? 1.0 : -1.0) / (2 * n + 1);
+        local_sum += term;
+    }
+    
+    // Critical section: add local sum to global sum
+    pthread_mutex_lock(&mutex);
+    pi_sum += local_sum;
+    pthread_mutex_unlock(&mutex);
+    
+    return NULL;
+}
+
+int main(int argc, char* argv[]) {
+    // Check arguments
+    if (argc != 3) {
+        printf("Usage: %s <number of threads> <n>\n", argv[0]);
+        return 1;
+    }
+    
+    num_threads = atoi(argv[1]);
+    n_terms = atoi(argv[2]);
+    
+    // Validate input
+    if (num_threads <= 0 || n_terms <= 0) {
+        printf("Error: Both arguments must be positive integers.\n");
+        return 1;
+    }
+    
+    if (n_terms < 100000) {
+        printf("Error: n must be greater than 100,000.\n");
+        return 1;
+    }
+    
+    if (n_terms % num_threads != 0) {
+        printf("Error: n must be evenly divisible by number of threads.\n");
+        return 1;
+    }
+    
+    // Initialize mutex
+    pthread_mutex_init(&mutex, NULL);
+    
+    // Create thread arrays
+    pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
+    int* thread_ids = malloc(num_threads * sizeof(int));
+    
+    // Create threads
+    for (int i = 0; i < num_threads; i++) {
+        thread_ids[i] = i;
+        pthread_create(&threads[i], NULL, calculate_pi, &thread_ids[i]);
+    }
+    
+    // Wait for all threads to complete
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    // Calculate final pi value
+    double pi = 4.0 * pi_sum;
+    
+    // Print results
+    printf("Estimated Pi = %.15f\n", pi);
+    printf("Actual Pi    = 3.141592653589793\n");
+    printf("Difference   = %.15f\n", pi - 3.141592653589793);
+    printf("Number of threads: %d\n", num_threads);
+    printf("Number of terms: %d\n", n_terms);
+    
+    // Cleanup
+    pthread_mutex_destroy(&mutex);
+    free(threads);
+    free(thread_ids);
+    
+    return 0;
+}

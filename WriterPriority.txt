@@ -1,0 +1,106 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+int readCount = 0;
+int writeCount = 0;
+int sharedData = 0;
+
+pthread_mutex_t readMutex;
+pthread_mutex_t writeMutex;
+sem_t readLock;
+sem_t wrtlock;
+
+void* writer(void* arg)
+{
+    int writer_id = *(int*)arg;
+    
+    pthread_mutex_lock(&writeMutex);
+    writeCount++;
+    if (writeCount == 1) {
+        sem_wait(&readLock);
+    }
+    pthread_mutex_unlock(&writeMutex);
+    
+    sem_wait(&wrtlock);
+    
+    sharedData++;
+    printf("Writer %d is writing data = %d\n", writer_id, sharedData);
+    sleep(1);
+    
+    sem_post(&wrtlock);
+    
+    pthread_mutex_lock(&writeMutex);
+    writeCount--;
+    if (writeCount == 0) {
+        sem_post(&readLock);
+    }
+    pthread_mutex_unlock(&writeMutex);
+    
+    return NULL;
+}
+
+void* reader(void* arg)
+{
+    int reader_id = *(int*)arg;
+    
+    sem_wait(&readLock);
+    pthread_mutex_lock(&readMutex);
+    readCount++;
+    if (readCount == 1) {
+        sem_wait(&wrtlock);
+    }
+    pthread_mutex_unlock(&readMutex);
+    sem_post(&readLock);
+    
+    printf("Reader %d is reading data = %d\n", reader_id, sharedData);
+    sleep(1);
+    
+    pthread_mutex_lock(&readMutex);
+    readCount--;
+    if (readCount == 0) {
+        sem_post(&wrtlock);
+    }
+    pthread_mutex_unlock(&readMutex);
+    
+    return NULL;
+}
+
+int main()
+{
+    pthread_t readers[5], writers[3];
+    int reader_ids[5] = {1, 2, 3, 4, 5};
+    int writer_ids[3] = {1, 2, 3};
+    
+    pthread_mutex_init(&readMutex, NULL);
+    pthread_mutex_init(&writeMutex, NULL);
+    sem_init(&readLock, 0, 1);
+    sem_init(&wrtlock, 0, 1);
+    
+    pthread_create(&readers[0], NULL, reader, &reader_ids[0]);
+    pthread_create(&readers[1], NULL, reader, &reader_ids[1]);
+    pthread_create(&writers[0], NULL, writer, &writer_ids[0]);
+    pthread_create(&readers[2], NULL, reader, &reader_ids[2]);
+    pthread_create(&writers[1], NULL, writer, &writer_ids[1]);
+    pthread_create(&readers[3], NULL, reader, &reader_ids[3]);
+    pthread_create(&writers[2], NULL, writer, &writer_ids[2]);
+    pthread_create(&readers[4], NULL, reader, &reader_ids[4]);
+    
+    for (int i = 0; i < 5; i++) {
+        pthread_join(readers[i], NULL);
+    }
+    for (int i = 0; i < 3; i++) {
+        pthread_join(writers[i], NULL);
+    }
+    
+    sem_destroy(&readLock);
+    sem_destroy(&wrtlock);
+    pthread_mutex_destroy(&readMutex);
+    pthread_mutex_destroy(&writeMutex);
+    
+    printf("\nFinal shared data value: %d\n", sharedData);
+    
+    return 0;
+}
